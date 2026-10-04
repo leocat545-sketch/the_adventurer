@@ -1007,7 +1007,7 @@ function syncMultiSettingsUI(){
 }
 function charBack(){saveChar();show(fromPause?'pause-menu':'menu');}
 function resumeGame(){document.querySelectorAll('.screen').forEach(s=>s.style.display='none');document.getElementById('hud').style.display='block';gameRunning=true;}
-function openPause(){if(!gameRunning)return;gameRunning=false;fromPause=true;show('pause-menu');}
+function openPause(){try{if(FX.inGame&&PLAYER_STATS.hp>0)saveGame();}catch(e){}if(!gameRunning)return;gameRunning=false;fromPause=true;show('pause-menu');}
 
 // ══ MENU ANIMÉ ══
 (()=>{
@@ -1486,9 +1486,7 @@ function openItemPop(key,e){
     // Corde : si on est dans une grotte et qu'on jette une corde → remonte à la surface
     if(key==='rope'&&inCave){
       v.qty=Math.max(0,v.qty-1);
-      inCave=false;subDepth=0;
-      player.x=cOffX/8*TILE;player.y=cOffY/8*TILE;
-      ENEMIES.length=0;caveTex.clear();
+      popRet(true);
       popup('🪢 Remonté à la surface !');
       closeItemPop();closeInv();
       return;
@@ -3841,8 +3839,8 @@ function doAction(){
     gameRunning=false;invTabCur='items';renderInvBody();renderAB();show('inv-screen');
     popup('📦 Coffre ouvert !');return;
   }
-  if(action==='enter'){inCave=true;cOffX=ptx*8;cOffY=pty*8;caveTex.clear();const cs=findCaveSpawn();player.x=cs.x;player.y=cs.y;popup('⬇ Grotte');return;}
-  if(action==='exit'){inCave=false;player.x=cOffX/8*TILE;player.y=cOffY/8*TILE;ENEMIES.length=0;popup('⬆ Sortie');return;}
+  if(action==='enter'){pushRet();subDepth=0;inCave=true;cOffX=ptx*8;cOffY=pty*8;caveTex.clear();const cs=findCaveSpawn();player.x=cs.x;player.y=cs.y;FX.camX=null;saveGame();popup('⬇ Grotte');return;}
+  if(action==='exit'){popRet();saveGame();popup('⬆ Sortie');return;}
   if(action==='ascend'){
     inSky=true;skyLevel++;skyOffX=ptx*8;skyOffY=pty*8;
     ENEMIES.length=0;skyTexC.clear();skyIslandMap.clear();
@@ -3850,9 +3848,11 @@ function doAction(){
     popup('☁ Cité des Cieux !');
     return;
   }
-  if(action==='mine_floor'){inCave=true;cOffX=ptx*12;cOffY=(pty+1)*12;subDepth++;caveTex.clear();const cs2=findCaveSpawn();player.x=cs2.x;player.y=cs2.y;popup(`⬇ Prof. ${subDepth} — ${getCaveBiome()}`);return;}
+  if(action==='mine_floor'){pushRet();inCave=true;cOffX=ptx*12;cOffY=(pty+1)*12;subDepth=1;caveTex.clear();const cs2=findCaveSpawn();player.x=cs2.x;player.y=cs2.y;FX.camX=null;saveGame();popup(`⬇ Prof. ${subDepth} — ${getCaveBiome()}`);return;}
   if(action==='mine_ore'){for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const tx=ptx+dx,ty=pty+dy,t=getCaveType(tx,ty,cOffX,cOffY),mk=`cave_${tx+cOffX},${ty+cOffY}`;if(!removedSet.has(mk)&&['coal','iron','gold','diamond'].includes(t)&&Math.hypot(px2-(tx+.5)*TILE,py2-(ty+.5)*TILE)<TILE*1.4){removedSet.add(mk);caveTypeMap.set(`ct${tx+cOffX},${ty+cOffY}`,'floor');const m={coal:'coal',iron:'iron',gold:'gold',diamond:'diamond'};const oreMul=CFG.oreMul||1;const amt=Math.max(1,Math.floor((1+Math.random()*2)*oreMul));INV[m[t]].qty+=amt;popup(`+${amt} ${INV[m[t]].ic}`);saveGame();if(CFG.vib&&navigator.vibrate)navigator.vibrate(25);return;}}return;}
   if(action==='dig'){
+    if(inCave){const dk=ptx+','+pty;if(FX.dk!==dk){FX.dk=dk;FX.dn=0;}FX.dn++;fxText(player.x+player.w/2,player.y-4,'⛏ '+FX.dn+'/6','#ffe066');
+      if(FX.dn>=6){FX.dn=0;pushRet();cOffX+=ptx*12+777*(subDepth+1);cOffY+=pty*12+333*(subDepth+1);subDepth++;caveTex.clear();ENEMIES.length=0;const cs3=findCaveSpawn();player.x=cs3.x;player.y=cs3.y;FX.camX=null;popup(`⬇ Prof. ${subDepth+1} — ${getCaveBiome()}`);saveGame();return;}}
     const dbas=inCave?'cave':getTile(ptx,pty).base;
     if(dbas==='desert'){INV.sand.qty+=1+Math.floor(Math.random()*2);popup('+🟡 Sable');}
     else if(dbas==='neige'||dbas==='toundra'){INV.snow_res.qty+=1+Math.floor(Math.random()*2);popup('+❄ Neige');}
@@ -4004,7 +4004,7 @@ function popup(msg){const el=document.getElementById('popup');el.textContent=msg
 // ══ BOUCLE ══
 function startGame(cont=false,spawnBiome='plaine'){
   if(cont){if(!loadSave()){const sp=findSpawn(CFG.startBiome||spawnBiome);player.x=sp.x;player.y=sp.y;}}
-  else{inCave=false;subDepth=0;AB=Array(CFG.slots).fill(null);const sp=findSpawn(spawnBiome);player.x=sp.x;player.y=sp.y;
+  else{CAVE_RET.length=0;inCave=false;subDepth=0;AB=Array(CFG.slots).fill(null);const sp=findSpawn(spawnBiome);player.x=sp.x;player.y=sp.y;
     ENEMIES.length=0;dayTick=0;weather='clear';weatherParticles=[];snowAccum=0;snowmanSpawned=false;
     inSky=false;skyLevel=0;skyTexC.clear();skyIslandMap.clear();
     PLAYER_STATS.hp=20;PLAYER_STATS.maxHp=20;PLAYER_STATS.food=20;PLAYER_STATS.xp=0;PLAYER_STATS.xpNext=100;PLAYER_STATS.level=1;PLAYER_STATS.invincible=0;
@@ -4060,7 +4060,7 @@ function _charExtras(cx,W2,sprinting){
 function saveKeyActive(){return localStorage.getItem('rpg9_active')||'rpg9';}
 function buildSave(){return{v:2,gen:GEN2?2:1,px:player.x,py:player.y,pw:player.w,ph:player.h,seed:worldSeed,cc:JSON.stringify(CC),cs:JSON.stringify(CS),
   inv:JSON.stringify(Object.fromEntries(Object.entries(INV).map(([k,v])=>[k,v.qty]))),removed:JSON.stringify([...removedSet]),placed:JSON.stringify([...placedBlocks.entries()]),ab:JSON.stringify(AB),
-  inCave,cOffX,cOffY,subDepth,inSky,skyLevel,dayTick,weather,stats:{hp:PLAYER_STATS.hp,maxHp:PLAYER_STATS.maxHp,food:PLAYER_STATS.food,xp:PLAYER_STATS.xp,xpNext:PLAYER_STATS.xpNext,level:PLAYER_STATS.level},
+  inCave,cOffX,cOffY,subDepth,ret:CAVE_RET.slice(),inSky,skyLevel,dayTick,weather,stats:{hp:PLAYER_STATS.hp,maxHp:PLAYER_STATS.maxHp,food:PLAYER_STATS.food,xp:PLAYER_STATS.xp,xpNext:PLAYER_STATS.xpNext,level:PLAYER_STATS.level},
   ts:Date.now(),mode:CFG.mode,charName:CFG.charName,cfg:JSON.stringify({zoom:CFG.zoom,spd:CFG.spd,btnR:CFG.btnR,slots:CFG.slots,vib:CFG.vib,showBiome:CFG.showBiome,shadow:CFG.shadow,water:CFG.water,particles:CFG.particles,pausePos:CFG.pausePos,uiAlpha:CFG.uiAlpha,sprintMul:CFG.sprintMul})};}
 function saveGame(){try{const k=saveKeyActive(),prev=localStorage.getItem(k);localStorage.setItem(k,JSON.stringify(buildSave()));
   if(prev&&Date.now()-(+localStorage.getItem(k+'_bakT')||0)>120000){localStorage.setItem(k+'_bak',prev);localStorage.setItem(k+'_bakT',Date.now());}
@@ -4077,7 +4077,7 @@ function loadSave(){
     Object.assign(CC,JSON.parse(d.cc));Object.assign(CS,JSON.parse(d.cs));
     for(const q in INV)INV[q].qty=0;const inv=JSON.parse(d.inv);for(const q in inv)if(INV[q])INV[q].qty=inv[q];
     JSON.parse(d.removed).forEach(q=>removedSet.add(q));JSON.parse(d.placed).forEach(([q,v])=>placedBlocks.set(q,v));
-    AB=JSON.parse(d.ab);inCave=d.inCave||false;cOffX=d.cOffX||0;cOffY=d.cOffY||0;subDepth=d.subDepth||0;inSky=d.inSky||false;skyLevel=d.skyLevel||0;
+    AB=JSON.parse(d.ab);inCave=d.inCave||false;cOffX=d.cOffX||0;cOffY=d.cOffY||0;subDepth=d.subDepth||0;CAVE_RET.length=0;(d.ret||[]).forEach(q=>CAVE_RET.push(q));inSky=d.inSky||false;skyLevel=d.skyLevel||0;
     if(d.dayTick!==undefined)dayTick=d.dayTick;weather=d.weather||'clear';if(d.stats)Object.assign(PLAYER_STATS,d.stats,{invincible:0});
     if(d.mode)CFG.mode=d.mode;if(d.charName)CFG.charName=d.charName;if(d.cfg){try{Object.assign(CFG,JSON.parse(d.cfg));}catch(e){}}
     rebuildAB();return true;
@@ -4362,8 +4362,20 @@ function fxSparkle(t,col,row){
   ctx.globalAlpha=(k-.72)/.28;ctx.fillStyle=t==='volcan_bloc'?'#ffb040':'#fff';ctx.fillRect(px-.5,py-3,1,6);ctx.fillRect(px-3,py-.5,6,1);ctx.globalAlpha=1;
 }
 
+// ══ GROTTES : pile de retour (on ressort toujours là où on est entré) ══
+const CAVE_RET=[];
+function pushRet(){CAVE_RET.push({x:player.x,y:player.y,inCave,cOffX,cOffY,subDepth});}
+function popRet(all){
+  const r=all?CAVE_RET[0]:CAVE_RET[CAVE_RET.length-1];
+  if(all)CAVE_RET.length=0;else CAVE_RET.pop();
+  caveTex.clear();ENEMIES.length=0;FX.camX=null;
+  if(r){inCave=r.inCave;cOffX=r.cOffX;cOffY=r.cOffY;subDepth=r.inCave?r.subDepth:0;player.x=r.x;player.y=r.y;}
+  else{player.x=cOffX/8*TILE;player.y=cOffY/8*TILE;inCave=false;subDepth=0;}
+}
+// sauvegarde automatique : position exacte toutes les 15 s
+setInterval(()=>{try{if(gameRunning&&FX.inGame&&PLAYER_STATS.hp>0)saveGame();}catch(e){}},15000);
+
 // ══ INTERACTION v2 ══
-FX.fx=0;FX.fy=1;
 const ACT_LBL={chop:'Couper',mine:'Miner',mine_mountain:'Miner',mine_ore:'Miner',enter:'Entrer',exit:'Sortir',ascend:'Monter',mine_floor:'Descendre',break_placed:'Casser',interact_workbench_p:'Établi',interact_furnace_p:'Four',interact_chest_p:'Coffre',interact_door_p:'Porte'};
 const HOLD_OK=new Set(['chop','mine','mine_mountain','mine_ore','atk']);
 function sortedTargets(ptx,pty,px2,py2){const out=[];for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const tx=ptx+dx,ty=pty+dy,cx=(tx+.5)*TILE,cy=(ty+.5)*TILE,d=Math.hypot(cx-px2,cy-py2)||1,dot=((cx-px2)*FX.fx+(cy-py2)*FX.fy)/d;out.push({tx,ty,s:d*(1.3-.55*dot)});}out.sort((a,b)=>a.s-b.s);return out;}
@@ -4439,7 +4451,7 @@ function pbXY(pk){let c=PBC.get(pk);if(!c){const a=pk.slice(7).split(',');c=[+a[
 function cacheText(el){if(!el)return;const d=Object.getOwnPropertyDescriptor(Node.prototype,'textContent');let last;Object.defineProperty(el,'textContent',{get(){return d.get.call(this);},set(v){if(v!==last){last=v;d.set.call(this,v);}}});}
 
 // ══ FX & PHYSIQUE v2 ══
-const FX={parts:[],rings:[],texts:[],shake:0,camX:null,camY:null,mk:-1,vx:0,vy:0,kbx:0,kby:0,lc:null,vig:null};
+const FX={fx:0,fy:1,parts:[],rings:[],texts:[],shake:0,camX:null,camY:null,mk:-1,vx:0,vy:0,kbx:0,kby:0,lc:null,vig:null};
 function fxBurst(x,y,n,o={}){if(!CFG.particles)return;for(let i=0;i<n;i++){const a=Math.random()*6.283,sp=(o.spd||1.5)*(.4+Math.random());const l=(o.life||30)*(.6+Math.random()*.6);FX.parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-(o.up||0),life:l,max:l,c:o.c||'#fff',sz:o.sz||2,g:o.g??.06,sq:o.sq});}if(FX.parts.length>400)FX.parts.splice(0,FX.parts.length-400);}
 function fxText(x,y,t,c){FX.texts.push({x,y,t,c,life:42});}
 function fxUpdateDraw(dt){
